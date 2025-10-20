@@ -14,6 +14,9 @@ import { Toggle } from "@/components/toggle/Toggle";
 import { Textarea } from "@/components/textarea/Textarea";
 import { MemoizedMarkdown } from "@/components/memoized-markdown";
 import { ToolInvocationCard } from "@/components/tool-invocation-card/ToolInvocationCard";
+import { WorkflowStatus } from './components/workflow-status';
+import { VoiceInput } from './components/voice-input';
+
 
 // Icon imports
 import {
@@ -34,7 +37,6 @@ const toolsRequiringConfirmation: (keyof typeof tools)[] = [
 
 export default function Chat() {
   const [theme, setTheme] = useState<"dark" | "light">(() => {
-    // Check localStorage first, default to dark if not found
     const savedTheme = localStorage.getItem("theme");
     return (savedTheme as "dark" | "light") || "dark";
   });
@@ -42,6 +44,14 @@ export default function Chat() {
   const [textareaHeight, setTextareaHeight] = useState("auto");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const [workflowSteps, setWorkflowSteps] = useState<{
+    id: string;
+    name: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    timestamp?: Date;
+  }[]>([]);
+  const [showWorkflow, setShowWorkflow] = useState(false);
+  
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
@@ -91,6 +101,32 @@ export default function Chat() {
     const message = agentInput;
     setAgentInput("");
 
+    // Show workflow steps
+    const steps = [
+      { id: '1', name: 'Processing user input', status: 'running' as const, timestamp: new Date() },
+      { id: '2', name: 'Analyzing intent', status: 'pending' as const },
+      { id: '3', name: 'Generating response', status: 'pending' as const },
+      { id: '4', name: 'Streaming to user', status: 'pending' as const }
+    ];
+    
+    setWorkflowSteps(steps);
+    setShowWorkflow(true);
+
+    // Simulate workflow progression
+    setTimeout(() => {
+      setWorkflowSteps(prev => prev.map(step => 
+        step.id === '1' ? { ...step, status: 'completed' } :
+        step.id === '2' ? { ...step, status: 'running', timestamp: new Date() } : step
+      ));
+    }, 500);
+
+    setTimeout(() => {
+      setWorkflowSteps(prev => prev.map(step => 
+        step.id === '2' ? { ...step, status: 'completed' } :
+        step.id === '3' ? { ...step, status: 'running', timestamp: new Date() } : step
+      ));
+    }, 1000);
+
     // Send message to agent
     await sendMessage(
       {
@@ -101,6 +137,20 @@ export default function Chat() {
         body: extraData
       }
     );
+
+    // Complete workflow when response starts
+    setTimeout(() => {
+      setWorkflowSteps(prev => prev.map(step => 
+        step.id === '3' ? { ...step, status: 'completed' } :
+        step.id === '4' ? { ...step, status: 'running', timestamp: new Date() } : step
+      ));
+    }, 1500);
+
+    // Hide workflow after completion
+    setTimeout(() => {
+      setWorkflowSteps(prev => prev.map(step => ({ ...step, status: 'completed' })));
+      setTimeout(() => setShowWorkflow(false), 1000);
+    }, 3000);
   };
 
   const {
@@ -220,6 +270,12 @@ export default function Chat() {
               </Card>
             </div>
           )}
+
+          {/* Workflow Status */}
+          <WorkflowStatus 
+            steps={workflowSteps} 
+            isVisible={showWorkflow}
+          />
 
           {agentMessages.map((m, index) => {
             const isUser = m.role === "user";
@@ -387,7 +443,23 @@ export default function Chat() {
                 rows={2}
                 style={{ height: textareaHeight }}
               />
-              <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end">
+              <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end items-center">
+                <VoiceInput
+                  onTranscript={(transcript) => {
+                    setAgentInput(transcript);
+                    // Auto-focus the textarea after voice input
+                    const textarea = document.querySelector('textarea');
+                    if (textarea) {
+                      textarea.focus();
+                      // Trigger resize
+                      textarea.style.height = "auto";
+                      textarea.style.height = `${textarea.scrollHeight}px`;
+                      setTextareaHeight(`${textarea.scrollHeight}px`);
+                    }
+                  }}
+                  disabled={pendingToolCallConfirmation}
+                />
+                
                 {status === "submitted" || status === "streaming" ? (
                   <button
                     type="button"
